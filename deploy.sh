@@ -6,8 +6,8 @@ if [ -z "$1" ] || [ -z "$2" ]; then
     exit 1
 fi
 
-ORDER_ID="$1"
-API_SERVER="$2"
+API_SERVER="$1"
+ORDER_ID="$2"
 
 # Function to generate random progress variation (±5%)
 random_progress() {
