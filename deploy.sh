@@ -81,10 +81,10 @@ fi
 # Check if 3x-ui image exists, pull only if missing
 echo "Checking for 3x-ui Docker image..."
 send_status "checking_image" 50
-if ! docker image inspect ghcr.io/mhsanaei/3x-ui:latest >/dev/null 2>&1; then
+if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "Pulling 3x-ui Docker image..."
     send_status "pulling_image" 70
-    if ! docker pull ghcr.io/mhsanaei/3x-ui:latest; then
+    if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
         echo "Failed to pull 3x-ui image."
         send_status "failed" 70
         exit 1
