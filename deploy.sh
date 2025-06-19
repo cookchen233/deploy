@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Check if order_id and api_server are provided
+# Check if api_server and order_id are provided
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $0 <order_id> <api_server>"
+    echo "Usage: $0 <api_server> <order_id>"
     exit 1
 fi
 
@@ -51,20 +51,20 @@ if ! command -v docker >/dev/null 2>&1; then
     apt-get update >/dev/null 2>&1 || { echo "Failed to update apt"; send_status "failed" 10; exit 1; }
     apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1 || { echo "Failed to install prerequisites"; send_status "failed" 10; exit 1; }
 
-    # Retry curl for GPG key up to 3 times with 10s timeout and 5s delay
+    # Retry curl for GPG key up to 10 times with 10s timeout and 1s delay
     GPG_URL="https://download.docker.com/linux/ubuntu/gpg"
     for attempt in {1..10}; do
-        echo "Attempting to fetch GPG key ($attempt/3)..."
+        echo "Attempting to fetch GPG key ($attempt/10)..."
         if curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 2 "$GPG_URL" > /tmp/docker.gpg; then
             apt-key add /tmp/docker.gpg >/dev/null 2>&1 && break
-            echo "Failed to add GPG key, attempt $attempt/3"
+            echo "Failed to add GPG key, attempt $attempt/10"
         else
             echo "Curl failed: $(cat /tmp/docker.gpg 2>/dev/null || echo 'No output')"
         fi
         send_status "installing_docker" 15
         sleep 1
         if [ $attempt -eq 10 ]; then
-            echo "Failed to fetch Docker GPG key after 3 attempts."
+            echo "Failed to fetch Docker GPG key after 10 attempts."
             kill $progress_pid 2>/dev/null
             wait $progress_pid 2>/dev/null
             send_status "failed" 30
