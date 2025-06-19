@@ -46,12 +46,29 @@ echo "Checking for Docker installation..."
 send_status "checking_docker" 10
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing Docker..."
-    # Start background progress updates (assuming ~60s for Docker install)
     update_progress "installing_docker" 10 30 60 &
     progress_pid=$!
     apt-get update >/dev/null 2>&1
     apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - >/dev/null 2>&1
+
+    # Retry curl for GPG key up to 3 times with 5s delay
+    for attempt in {1..3}; do
+        if curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - >/dev/null 2>&1; then
+            break
+        else
+            echo "Failed to fetch GPG key, attempt $attempt/3"
+            send_status "installing_docker" 15
+            sleep 5
+            if [ $attempt -eq 3 ]; then
+                echo "Failed to fetch Docker GPG key after 3 attempts."
+                kill $progress_pid 2>/dev/null
+                wait $progress_pid 2>/dev/null
+                send_status "failed" 30
+                exit 1
+            fi
+        fi
+    done
+
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" >/dev/null 2>&1
     apt-get update >/dev/null 2>&1
     apt-get install -y docker-ce >/dev/null 2>&1
@@ -91,7 +108,7 @@ if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
 fi
 
-# Run the 3x-ui container
+# Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
 send_status "starting_container" 90
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 ghcr.io/mhsanaei/3x-ui:latest >/dev/null 2>&1; then
