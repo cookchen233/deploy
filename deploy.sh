@@ -103,7 +103,7 @@ fi
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
 send_status "starting_container" 90
-if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 ghcr.io/mhsanaei/3x-ui:latest >/dev/null 2>&1; then
+if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "3x-ui container started successfully."
     send_status "success" 100
 else
