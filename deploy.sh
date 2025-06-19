@@ -9,11 +9,36 @@ fi
 ORDER_ID="$1"
 API_SERVER="$2"
 
+# Function to generate random progress variation (±5%)
+random_progress() {
+    local base="$1"
+    local variation=$((RANDOM % 11 - 5)) # Random number between -5 and 5
+    echo "$base + $variation" | bc
+}
+
 # Function to send status update
 send_status() {
     local status="$1"
     local progress="$2"
-    curl -X POST "${API_SERVER}/api/vps/deploy/status" -H "Content-Type: application/json" -d "{\"orderId\": \"${ORDER_ID}\", \"status\": \"${status}\", \"progress\": ${progress}}" >/dev/null 2>&1
+    local adjusted_progress=$(random_progress "$progress")
+    curl -X POST "${API_SERVER}/api/vps/deploy/status" -H "Content-Type: application/json" -d "{\"orderId\": \"${ORDER_ID}\", \"status\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1
+}
+
+# Background function to update progress during long operations
+update_progress() {
+    local status="$1"
+    local start_progress="$2"
+    local end_progress="$3"
+    local duration="$4"
+    local steps=10
+    local interval=$(echo "$duration / $steps" | bc)
+    local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
+
+    for ((i=1; i<=steps; i++)); do
+        local current_progress=$(echo "$start_progress + $i * $step_size" | bc -l)
+        send_status "$status" "$current_progress"
+        sleep "$interval"
+    done
 }
 
 # Check if Docker is installed
@@ -21,7 +46,9 @@ echo "Checking for Docker installation..."
 send_status "checking_docker" 10
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing Docker..."
-    send_status "installing_docker" 30
+    # Start background progress updates (assuming ~60s for Docker install)
+    update_progress "installing_docker" 10 30 60 &
+    progress_pid=$!
     apt-get update >/dev/null 2>&1
     apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - >/dev/null 2>&1
@@ -30,6 +57,8 @@ if ! command -v docker >/dev/null 2>&1; then
     apt-get install -y docker-ce >/dev/null 2>&1
     systemctl start docker >/dev/null 2>&1
     systemctl enable docker >/dev/null 2>&1
+    kill $progress_pid 2>/dev/null
+    wait $progress_pid 2>/dev/null
     if ! command -v docker >/dev/null 2>&1; then
         echo "Failed to install Docker."
         send_status "failed" 30
@@ -62,10 +91,10 @@ if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
 fi
 
-# Run the 3x-ui Docker container
+# Run the 3x-ui container
 echo "Starting 3x-ui Docker container..."
 send_status "starting_container" 90
-if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 ghcr.io/mhsanaei/3x-ui:latest; then
+if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 ghcr.io/mhsanaei/3x-ui:latest >/dev/null 2>&1; then
     echo "3x-ui container started successfully."
     send_status "success" 100
 else
