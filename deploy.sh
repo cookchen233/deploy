@@ -51,27 +51,38 @@ if ! command -v docker >/dev/null 2>&1; then
     apt-get update >/dev/null 2>&1 || { echo "Failed to update apt"; send_status "failed" 10; exit 1; }
     apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1 || { echo "Failed to install prerequisites"; send_status "failed" 10; exit 1; }
 
-    # Retry curl for GPG key up to 10 times with 10s timeout and 1s delay
+    # Retry curl for GPG key up to 10 times with 15s timeout and 1s delay
     GPG_URL="https://download.docker.com/linux/ubuntu/gpg"
+    FALLBACK_GPG_URL="https://get.docker.com/gpg" # Fallback URL
     for attempt in {1..10}; do
-        echo "Attempting to fetch GPG key ($attempt/10)..."
-        if curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 2 "$GPG_URL" > /tmp/docker.gpg; then
-            apt-key add /tmp/docker.gpg >/dev/null 2>&1 && break
-            echo "Failed to add GPG key, attempt $attempt/10"
+        echo "Attempting to fetch GPG key ($attempt/10) from $GPG_URL..."
+        if curl -fsSL --connect-timeout 15 --max-time 30 --retry 2 --retry-delay 2 "$GPG_URL" > /tmp/docker.gpg 2>/tmp/curl_err.log; then
+            if apt-key add /tmp/docker.gpg >/dev/null 2>&1; then
+                break
+            else
+                echo "Failed to add GPG key, attempt $attempt/10"
+            fi
         else
-            echo "Curl failed: $(cat /tmp/docker.gpg 2>/dev/null || echo 'No output')"
+            echo "Curl failed: $(cat /tmp/curl_err.log 2>/dev/null || echo 'No output')"
+            # Try fallback URL on the last attempt
+            if [ $attempt -eq 10 ]; then
+                echo "Trying fallback GPG URL: $FALLBACK_GPG_URL..."
+                if curl -fsSL --connect-timeout 15 --max-time 30 --retry 2 --retry-delay 2 "$FALLBACK_GPG_URL" > /tmp/docker.gpg 2>/tmp/curl_err.log; then
+                    apt-key add /tmp/docker.gpg >/dev/null 2>&1 || { echo "Failed to add fallback GPG key"; send_status "failed" 30; exit 1; }
+                else
+                    echo "Fallback curl failed: $(cat /tmp/curl_err.log 2>/dev/null || echo 'No output')"
+                    echo "Failed to fetch Docker GPG key after 10 attempts."
+                    kill $progress_pid 2>/dev/null
+                    wait $progress_pid 2>/dev/null
+                    send_status "failed" 30
+                    exit 1
+                fi
+            fi
         fi
         send_status "installing_docker" 15
         sleep 1
-        if [ $attempt -eq 10 ]; then
-            echo "Failed to fetch Docker GPG key after 10 attempts."
-            kill $progress_pid 2>/dev/null
-            wait $progress_pid 2>/dev/null
-            send_status "failed" 30
-            exit 1
-        fi
     done
-    rm -f /tmp/docker.gpg
+    rm -f /tmp/docker.gpg /tmp/curl_err.log
 
     add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" >/dev/null 2>&1 || { echo "Failed to add Docker repository"; send_status "failed" 30; exit 1; }
     apt-get update >/dev/null 2>&1 || { echo "Failed to update apt after adding repo"; send_status "failed" 30; exit 1; }
