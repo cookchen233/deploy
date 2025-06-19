@@ -52,14 +52,14 @@ if ! command -v docker >/dev/null 2>&1; then
     apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1
 
     # Retry curl for GPG key up to 3 times with 5s delay
-    for attempt in {1..3}; do
+    for attempt in {1..10}; do
         if curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - >/dev/null 2>&1; then
             break
         else
             echo "Failed to fetch GPG key, attempt $attempt/3"
             send_status "installing_docker" 15
-            sleep 5
-            if [ $attempt -eq 3 ]; then
+            sleep 1
+            if [ $attempt -eq 10 ]; then
                 echo "Failed to fetch Docker GPG key after 3 attempts."
                 kill $progress_pid 2>/dev/null
                 wait $progress_pid 2>/dev/null
