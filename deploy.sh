@@ -48,32 +48,36 @@ if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing Docker..."
     update_progress "installing_docker" 10 30 60 &
     progress_pid=$!
-    apt-get update >/dev/null 2>&1
-    apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1
+    apt-get update >/dev/null 2>&1 || { echo "Failed to update apt"; send_status "failed" 10; exit 1; }
+    apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1 || { echo "Failed to install prerequisites"; send_status "failed" 10; exit 1; }
 
-    # Retry curl for GPG key up to 3 times with 5s delay
+    # Retry curl for GPG key up to 3 times with 10s timeout and 5s delay
+    GPG_URL="https://download.docker.com/linux/ubuntu/gpg"
     for attempt in {1..10}; do
-        if curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add - >/dev/null 2>&1; then
-            break
+        echo "Attempting to fetch GPG key ($attempt/3)..."
+        if curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 2 "$GPG_URL" > /tmp/docker.gpg; then
+            apt-key add /tmp/docker.gpg >/dev/null 2>&1 && break
+            echo "Failed to add GPG key, attempt $attempt/3"
         else
-            echo "Failed to fetch GPG key, attempt $attempt/3"
-            send_status "installing_docker" 15
-            sleep 1
-            if [ $attempt -eq 10 ]; then
-                echo "Failed to fetch Docker GPG key after 3 attempts."
-                kill $progress_pid 2>/dev/null
-                wait $progress_pid 2>/dev/null
-                send_status "failed" 30
-                exit 1
-            fi
+            echo "Curl failed: $(cat /tmp/docker.gpg 2>/dev/null || echo 'No output')"
+        fi
+        send_status "installing_docker" 15
+        sleep 1
+        if [ $attempt -eq 10 ]; then
+            echo "Failed to fetch Docker GPG key after 3 attempts."
+            kill $progress_pid 2>/dev/null
+            wait $progress_pid 2>/dev/null
+            send_status "failed" 30
+            exit 1
         fi
     done
+    rm -f /tmp/docker.gpg
 
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" >/dev/null 2>&1
-    apt-get update >/dev/null 2>&1
-    apt-get install -y docker-ce >/dev/null 2>&1
-    systemctl start docker >/dev/null 2>&1
-    systemctl enable docker >/dev/null 2>&1
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" >/dev/null 2>&1 || { echo "Failed to add Docker repository"; send_status "failed" 30; exit 1; }
+    apt-get update >/dev/null 2>&1 || { echo "Failed to update apt after adding repo"; send_status "failed" 30; exit 1; }
+    apt-get install -y docker-ce >/dev/null 2>&1 || { echo "Failed to install docker-ce"; send_status "failed" 30; exit 1; }
+    systemctl start docker >/dev/null 2>&1 || { echo "Failed to start Docker"; send_status "failed" 30; exit 1; }
+    systemctl enable docker >/dev/null 2>&1 || { echo "Failed to enable Docker"; send_status "failed" 30; exit 1; }
     kill $progress_pid 2>/dev/null
     wait $progress_pid 2>/dev/null
     if ! command -v docker >/dev/null 2>&1; then
