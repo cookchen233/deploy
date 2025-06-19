@@ -48,47 +48,24 @@ if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing Docker..."
     update_progress "installing_docker" 10 30 60 &
     progress_pid=$!
-    apt-get update >/dev/null 2>&1 || { echo "Failed to update apt"; send_status "failed" 10; exit 1; }
-    apt-get install -y apt-transport-https ca-certificates curl software-properties-common >/dev/null 2>&1 || { echo "Failed to install prerequisites"; send_status "failed" 10; exit 1; }
 
-    # Retry curl for GPG key up to 10 times with 15s timeout and 1s delay
-    GPG_URL="https://download.docker.com/linux/ubuntu/gpg"
-    FALLBACK_GPG_URL="https://get.docker.com/gpg" # Fallback URL
-    for attempt in {1..10}; do
-        echo "Attempting to fetch GPG key ($attempt/10) from $GPG_URL..."
-        if curl -fsSL --connect-timeout 15 --max-time 30 --retry 2 --retry-delay 2 "$GPG_URL" > /tmp/docker.gpg 2>/tmp/curl_err.log; then
-            if apt-key add /tmp/docker.gpg >/dev/null 2>&1; then
-                break
-            else
-                echo "Failed to add GPG key, attempt $attempt/10"
-            fi
-        else
-            echo "Curl failed: $(cat /tmp/curl_err.log 2>/dev/null || echo 'No output')"
-            # Try fallback URL on the last attempt
-            if [ $attempt -eq 10 ]; then
-                echo "Trying fallback GPG URL: $FALLBACK_GPG_URL..."
-                if curl -fsSL --connect-timeout 15 --max-time 30 --retry 2 --retry-delay 2 "$FALLBACK_GPG_URL" > /tmp/docker.gpg 2>/tmp/curl_err.log; then
-                    apt-key add /tmp/docker.gpg >/dev/null 2>&1 || { echo "Failed to add fallback GPG key"; send_status "failed" 30; exit 1; }
-                else
-                    echo "Fallback curl failed: $(cat /tmp/curl_err.log 2>/dev/null || echo 'No output')"
-                    echo "Failed to fetch Docker GPG key after 10 attempts."
-                    kill $progress_pid 2>/dev/null
-                    wait $progress_pid 2>/dev/null
-                    send_status "failed" 30
-                    exit 1
-                fi
-            fi
-        fi
-        send_status "installing_docker" 15
-        sleep 1
-    done
-    rm -f /tmp/docker.gpg /tmp/curl_err.log
+    # 1. Fast-path: install docker.io from the default Ubuntu repositories.
+    if apt-get update >/dev/null 2>&1 && apt-get install -y docker.io >/dev/null 2>&1; then
+        echo "docker.io installed from Ubuntu repository."
+    else
+        echo "docker.io package failed, falling back to the official convenience script..."
+        # 2. Fallback: use Docker's official one-liner which handles repos & GPG automatically.
+        curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || { \
+            echo "Convenience script install failed"; \
+            send_status "failed" 30; \
+            kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null; \
+            exit 1; }
+    fi
 
-    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" >/dev/null 2>&1 || { echo "Failed to add Docker repository"; send_status "failed" 30; exit 1; }
-    apt-get update >/dev/null 2>&1 || { echo "Failed to update apt after adding repo"; send_status "failed" 30; exit 1; }
-    apt-get install -y docker-ce >/dev/null 2>&1 || { echo "Failed to install docker-ce"; send_status "failed" 30; exit 1; }
-    systemctl start docker >/dev/null 2>&1 || { echo "Failed to start Docker"; send_status "failed" 30; exit 1; }
-    systemctl enable docker >/dev/null 2>&1 || { echo "Failed to enable Docker"; send_status "failed" 30; exit 1; }
+    # Ensure Docker service is running & enabled.
+    systemctl start docker >/dev/null 2>&1 || true
+    systemctl enable docker >/dev/null 2>&1 || true
+
     kill $progress_pid 2>/dev/null
     wait $progress_pid 2>/dev/null
     if ! command -v docker >/dev/null 2>&1; then
