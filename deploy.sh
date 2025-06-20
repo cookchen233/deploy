@@ -292,7 +292,7 @@ fi
 echo "Checking for 3x-ui Docker image..."
 # Final safety-net: ensure the Docker daemon is alive before any image operations
 ensure_docker_running() {
-    local timeout=${1:-30}  # seconds to wait in total
+    local timeout=${1:-60}  # seconds to wait in total
     local waited=0
 
     # Fast path: already healthy
