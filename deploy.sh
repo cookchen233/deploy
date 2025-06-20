@@ -185,7 +185,6 @@ install_docker() {
         return 1
     fi
     echo "Docker installed successfully."
-    rm -rf /var/lib/docker /var/run/docker
     systemctl enable docker.socket
     systemctl start docker.socket
     systemctl daemon-reexec

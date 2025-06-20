@@ -99,6 +99,8 @@ sudo apt-get update
 # 删除文件和目录
 echo "删除残余文件和配置..."
 sudo rm -rf /var/lib/docker
+sudo rm -rf /var/run/docker
+sudo rm -rf var/run/docker.sock
 sudo rm -rf /var/lib/containerd
 sudo rm -rf /etc/docker
 sudo rm -rf /run/docker
