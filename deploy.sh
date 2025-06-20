@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 
 # Check if api_server and order_id are provided
 if [ -z "$1" ] || [ -z "$2" ]; then
@@ -8,6 +9,22 @@ fi
 
 API_SERVER="$1"
 ORDER_ID="$2"
+
+# Ensure the script is run as root
+if [[ $EUID -ne 0 ]]; then
+    echo "This script must be run as root. Please rerun using sudo or as root user."
+    exit 1
+fi
+
+# Ensure bc utility is installed (used for progress calculations)
+if ! command -v bc >/dev/null 2>&1; then
+    echo "Installing bc utility..."
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y >/dev/null 2>&1 && apt-get install -y bc >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y bc >/dev/null 2>&1
+    fi
+fi
 
 # Function to generate random progress variation (±5%)
 random_progress() {
@@ -45,29 +62,39 @@ update_progress() {
 echo "Checking for Docker installation..."
 send_status "checking_docker" 10
 if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker not found, installing Docker..."
-    update_progress "installing_docker" 10 30 60 &
+    echo "Docker not found, installing..."
+    update_progress "installing_docker" 10 30 120 &
     progress_pid=$!
 
-    # 1. Fast-path: install docker.io from the default Ubuntu repositories.
-    if apt-get update >/dev/null 2>&1 && apt-get install -y docker.io >/dev/null 2>&1; then
-        echo "docker.io installed from Ubuntu repository."
+    if command -v apt-get >/dev/null 2>&1; then
+        # Debian / Ubuntu path
+        apt-get update -y >/dev/null 2>&1 || true
+        apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
+        apt-get install -y ca-certificates curl gnupg lsb-release >/dev/null 2>&1
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        echo \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+          $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1; then
+        # CentOS / RHEL path
+        yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine >/dev/null 2>&1 || true
+        yum install -y yum-utils >/dev/null 2>&1
+        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo >/dev/null 2>&1
+        yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
     else
-        echo "docker.io package failed, falling back to the official convenience script..."
-        # 2. Fallback: use Docker's official one-liner which handles repos & GPG automatically.
-        curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || { \
-            echo "Convenience script install failed"; \
-            send_status "failed" 30; \
-            kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null; \
-            exit 1; }
+        # Generic fallback
+        echo "Unknown package manager, using Docker convenience script."
+        curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
     fi
 
-    # Ensure Docker service is running & enabled.
-    systemctl start docker >/dev/null 2>&1 || true
-    systemctl enable docker >/dev/null 2>&1 || true
+    # Enable and start docker service
+    (systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true)
 
-    kill $progress_pid 2>/dev/null
-    wait $progress_pid 2>/dev/null
+    kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null || true
+
     if ! command -v docker >/dev/null 2>&1; then
         echo "Failed to install Docker."
         send_status "failed" 30
