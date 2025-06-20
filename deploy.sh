@@ -287,6 +287,44 @@ fi
 
 # Check if 3x-ui image exists, pull only if missing
 echo "Checking for 3x-ui Docker image..."
+# Final safety-net: ensure the Docker daemon is alive before any image operations
+ensure_docker_running() {
+    local timeout=${1:-30}  # seconds to wait in total
+    local waited=0
+
+    # Fast path: already healthy
+    if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
+        return 0
+    fi
+
+    echo "Docker daemon not running, attempting restart..."
+    systemctl daemon-reexec || true
+    systemctl restart docker || true
+
+    # Poll until healthy or timeout
+    while (( waited < timeout )); do
+        if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
+            echo "Docker daemon became healthy after ${waited}s."
+            return 0
+        fi
+        sleep 2
+        (( waited+=2 ))
+    done
+
+    echo "Docker daemon is still unhealthy after ${timeout}s. Showing recent logs..."
+    journalctl -xeu docker.service | tail -n 50 || true
+    return 1
+}
+
+# -----------------------------
+# Main logic continues
+# -----------------------------
+
+if ! ensure_docker_running; then
+    send_status "failed" 45
+    exit 1
+fi
+
 send_status "checking_image" 50
 if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "Pulling 3x-ui Docker image..."
