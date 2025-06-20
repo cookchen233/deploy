@@ -25,10 +25,13 @@ hash -r
 # Helper – wait until dockerd is responsive (max 30s)
 wait_for_dockerd() {
     local timeout=30
+    echo -n "[INFO] Waiting for dockerd "
     until docker info >/dev/null 2>&1; do
-        ((timeout--)) || return 1
+        ((timeout--)) || { echo "timeout"; return 1; }
+        echo -n "."
         sleep 1
     done
+    echo " ok"
     return 0
 }
 # ---------------------------------------------
@@ -36,7 +39,7 @@ wait_for_dockerd() {
 # Install Docker using official script with retry; return 0 on success, 1 on failure
 install_docker_official() {
     local retries=5
-    local wait=5
+    local wait=1
     local count=0
     while true; do
         if curl -fsSL https://get.docker.com | sh; then
