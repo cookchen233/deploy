@@ -33,6 +33,25 @@ wait_for_dockerd() {
 }
 # ---------------------------------------------
 
+# Install Docker using official script with retry; return 0 on success, 1 on failure
+install_docker_official() {
+    local retries=5
+    local wait=5
+    local count=0
+    while true; do
+        if curl -fsSL https://get.docker.com | sh; then
+            return 0
+        fi
+        count=$((count+1))
+        if [ "$count" -ge "$retries" ]; then
+            return 1
+        fi
+        echo "[WARN] Docker install failed, retry $count/$retries after ${wait}s..."
+        sleep "$wait"
+    done
+}
+
+
 # Function to generate random progress variation (±5%)
 random_progress() {
     local base="$1"
@@ -74,13 +93,18 @@ if ! command -v docker >/dev/null 2>&1; then
     update_progress "installing_docker" 10 60 300 &
     progress_pid=$!
 
-    if curl -fsSL https://get.docker.com | sh; then
+    if install_docker_official; then
         echo "Docker installation script completed."
     else
-        echo "Docker installation script failed."
-        send_status "failed" 30
-        kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
-        exit 1
+        echo "Official script still failing, attempting apt repository install..."
+        if command -v apt-get >/dev/null 2>&1 && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io; then
+            echo "docker.io package installed as fallback."
+        else
+            echo "All Docker installation methods failed."
+            send_status "failed" 30
+            kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
+            exit 1
+        fi
     fi
 
     # Enable and start docker service (non-fatal if already active)
