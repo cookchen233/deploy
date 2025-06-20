@@ -98,6 +98,7 @@ install_docker() {
     # Early exit if Docker exists
     if command -v docker >/dev/null 2>&1; then
         echo "Docker already installed."
+        rm -rf /var/lib/docker /var/run/docker
         systemctl enable docker.socket
         systemctl start docker.socket
         systemctl daemon-reexec
@@ -185,6 +186,7 @@ install_docker() {
         return 1
     fi
     echo "Docker installed successfully."
+    rm -rf /var/lib/docker /var/run/docker
     systemctl enable docker.socket
     systemctl start docker.socket
     systemctl daemon-reexec
