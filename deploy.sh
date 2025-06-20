@@ -85,6 +85,12 @@ install_docker() {
         # Try quick path
         if apt-get update -y && apt-get install -y docker.io; then
             echo "docker.io installed via default repo."
+            # Refresh command lookup cache
+            hash -r
+            if ! command -v docker >/dev/null 2>&1; then
+                echo "docker binary still missing, installing docker-ce-cli..."
+                apt-get install -y docker-ce-cli docker-ce containerd.io docker-buildx-plugin docker-compose-plugin
+            fi
         else
             echo "Switching to official Docker repo..."
             apt-get remove -y docker docker-engine docker.io containerd runc || true
