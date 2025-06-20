@@ -111,15 +111,10 @@ if ! command -v docker >/dev/null 2>&1; then
        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io; then
         echo "docker.io package installed from distribution repository."
     else
-        echo "Distribution package unavailable, falling back to official script..."
-        if install_docker_official; then
-            echo "Docker installation script completed."
-        else
-            echo "All Docker installation methods failed."
-            send_status "failed" 30
-            kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
-            exit 1
-        fi
+        echo "Distribution package install failed. Aborting to avoid long hangs with official script."
+        send_status "failed" 30
+        kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
+        exit 1
     fi
 
     # Enable and start docker service (non-fatal if already active)
