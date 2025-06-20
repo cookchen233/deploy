@@ -316,7 +316,31 @@ ensure_docker_running() {
         (( waited+=2 ))
     done
 
-    echo "Docker daemon is still unhealthy after ${timeout}s. Showing recent logs..."
+    echo "Docker daemon is still unhealthy after ${timeout}s. Attempting fd:// fallback..."
+    # Detect common fd:// socket-activation failure and create override without fd://
+    if journalctl -u docker.service -n 100 2>/dev/null | grep -q "no sockets found via socket activation"; then
+        echo "Applying systemd override to remove fd:// listener."
+        mkdir -p /etc/systemd/system/docker.service.d
+        cat > /etc/systemd/system/docker.service.d/override.conf <<'OVR'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+OVR
+        systemctl daemon-reload || true
+        systemctl disable docker.socket >/dev/null 2>&1 || true
+        systemctl stop docker.socket >/dev/null 2>&1 || true
+        systemctl restart docker || true
+        # Re-check after override
+        for i in {1..10}; do
+            if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
+                echo "Docker daemon started successfully after fd:// override."
+                return 0
+            fi
+            sleep 2
+        done
+    fi
+
+    echo "Docker daemon is still unhealthy after all recovery attempts. Showing recent logs..."
     journalctl -xeu docker.service | tail -n 50 || true
     return 1
 }
