@@ -72,7 +72,8 @@ ensure_git() {
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -y >/dev/null 2>&1 && apt-get install -y git >/dev/null 2>&1
     elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
-        (command -v dnf || command -v yum) install -y git >/dev/null 2>&1
+        YUM_TOOL="$(command -v dnf || command -v yum)"
+        $YUM_TOOL install -y git >/dev/null 2>&1
     elif command -v pacman >/dev/null 2>&1; then
         pacman -Sy --noconfirm git >/dev/null 2>&1
     elif command -v zypper >/dev/null 2>&1; then
