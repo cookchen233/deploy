@@ -24,10 +24,17 @@ hash -r
 
 # Helper – wait until dockerd is responsive (max 30s)
 wait_for_dockerd() {
-    local timeout=30
+    local timeout=120  # allow up to 2 minutes for slow systems
     echo -n "[INFO] Waiting for dockerd "
     until docker info >/dev/null 2>&1; do
-        ((timeout--)) || { echo "timeout"; return 1; }
+        ((timeout--)) || {
+            echo "timeout"
+            echo "--- docker.service status short ---"
+            systemctl status docker --no-pager -l | head -n 30 || true
+            echo "--- last 50 journal lines ---"
+            journalctl -u docker --no-pager -n 50 || true
+            return 1
+        }
         echo -n "."
         sleep 1
     done
