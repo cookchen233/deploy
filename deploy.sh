@@ -172,13 +172,15 @@ echo "Starting 3x-ui Docker container..."
 # Simulate container start 95→99 over 30s
 update_progress "starting_container" 95 99 30 &
 start_progress_pid=$!
-if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
+# Attempt to start container; show stdout suppressed but keep stderr visible for diagnostics
+if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null; then
     kill $start_progress_pid 2>/dev/null; wait $start_progress_pid 2>/dev/null
     echo "3x-ui container started successfully."
     send_status "success" 100
 else
     kill $start_progress_pid 2>/dev/null; wait $start_progress_pid 2>/dev/null
-    echo "Failed to start 3x-ui container."
+    echo "Failed to start 3x-ui container. Collecting last 50 log lines..."
+    docker logs --tail 50 3x-ui || true
     send_status "failed" 95
     exit 1
 fi
