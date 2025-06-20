@@ -35,11 +35,24 @@ random_progress() {
 
 # Function to send status update (run in background)
 send_status() {
-    local status="$1"
+    local message="$1"
     local progress="$2"
     local adjusted_progress=$(random_progress "$progress")
-    curl -X POST "${API_SERVER}/api/vps/update/deployment/task" -H "Content-Type: application/json" -d "{\"uuid\": \"${UUID}\", \"taskStatus\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1 &
+
+    local taskStatus=1
+    if [[ "$message" == "success" ]]; then
+        taskStatus=2
+    elif [[ "$message" == "failed" ]]; then
+        taskStatus=4
+    fi
+
+    curl -X POST "${API_SERVER}/api/vps/update/deployment/task" \
+      -H "Content-Type: application/json" \
+      -H "Cookie: bbsgo_token=b00aad0832a54ac680f5947036662361" \
+      -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"taskStatus\": ${taskStatus}, \"progress\": ${adjusted_progress}}" \
+      >/dev/null 2>&1 &
 }
+
 
 # Background function to update progress during long operations
 update_progress() {
