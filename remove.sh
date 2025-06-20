@@ -1,4 +1,67 @@
 #!/bin/bash
+# ----------------------------------------------
+# Robust Docker uninstallation script (cross-distro)
+# ----------------------------------------------
+set -euo pipefail
+
+# Require root privileges
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run as root or with sudo." >&2
+  exit 1
+fi
+
+log() { echo -e "[Docker-Remove] $*"; }
+
+# Stop and disable services if they exist
+for svc in docker containerd; do
+  if systemctl list-unit-files | grep -q "${svc}.service"; then
+    systemctl stop "$svc" 2>/dev/null || true
+    systemctl disable "$svc" 2>/dev/null || true
+  fi
+  service "$svc" stop 2>/dev/null || true
+  pkill -f "$svc" 2>/dev/null || true
+done
+
+# Detect package manager and remove packages
+remove_pkgs() {
+  if command -v apt-get >/dev/null 2>&1; then
+    apt-get purge -y docker\* containerd.io docker-compose-plugin docker-buildx-plugin || true
+    apt-get autoremove -y || true
+    rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg 2>/dev/null || true
+    apt-get update -y || true
+  elif command -v dnf >/dev/null 2>&1 || command -v yum >/dev/null 2>&1; then
+    local YUM_TOOL="$(command -v dnf || command -v yum)"
+    $YUM_TOOL remove -y docker\* containerd.io || true
+    $YUM_TOOL autoremove -y || true
+    rm -f /etc/yum.repos.d/docker-ce.repo 2>/dev/null || true
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -Rns --noconfirm docker docker-compose containerd || true
+  elif command -v zypper >/dev/null 2>&1; then
+    zypper remove -y docker docker-compose containerd || true
+  else
+    log "Unknown package manager, attempting to delete binaries only."
+  fi
+}
+
+remove_pkgs
+
+# Delete residual data and configs
+rm -rf /var/lib/docker /var/lib/containerd /etc/docker /run/docker 2>/dev/null || true
+rm -rf "$HOME/.docker" 2>/dev/null || true
+
+# Remove binaries that may have been installed manually
+for bin in docker dockerd docker-compose containerd; do
+  rm -f "/usr/local/bin/$bin" "/usr/bin/$bin" 2>/dev/null || true
+done
+
+# Final check
+if command -v docker >/dev/null 2>&1; then
+  log "❌ Docker still present. Manual cleanup needed."
+  exit 1
+fi
+
+log "🎉 Docker successfully uninstalled."
+exit 0
 
 echo "开始卸载 Docker 及其所有组件..."
 
