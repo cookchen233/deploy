@@ -262,8 +262,11 @@ if ! command -v docker >/dev/null 2>&1; then
         curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
     fi
 
-    # Enable and start docker service
-    (systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true)
+    # Enable and start docker.socket & docker service for proper fd:// activation
+    systemctl enable docker.socket >/dev/null 2>&1 || true
+    systemctl start docker.socket >/dev/null 2>&1 || true
+    systemctl enable docker >/dev/null 2>&1 || true
+    systemctl start docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
 
     # Verify daemon is now active
     if ! systemctl is-active --quiet docker || ! docker info >/dev/null 2>&1; then
@@ -299,6 +302,8 @@ ensure_docker_running() {
 
     echo "Docker daemon not running, attempting restart..."
     systemctl daemon-reexec || true
+    systemctl enable docker.socket >/dev/null 2>&1 || true
+    systemctl restart docker.socket >/dev/null 2>&1 || true
     systemctl restart docker || true
 
     # Poll until healthy or timeout
