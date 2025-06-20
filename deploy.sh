@@ -38,7 +38,7 @@ send_status() {
     local status="$1"
     local progress="$2"
     local adjusted_progress=$(random_progress "$progress")
-    curl -X POST "${API_SERVER}/api/vps/update/deployment/status" -H "Content-Type: application/json" -d "{\"uuid\": \"${UUID}\", \"taskStatus\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1 &
+    curl -X POST "${API_SERVER}/api/vps/update/deployment/task" -H "Content-Type: application/json" -d "{\"uuid\": \"${UUID}\", \"taskStatus\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1 &
 }
 
 # Background function to update progress during long operations
