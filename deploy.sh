@@ -306,17 +306,41 @@ ensure_docker_running() {
     systemctl restart docker.socket >/dev/null 2>&1 || true
     systemctl restart docker || true
 
+    # Helper to apply override once
+    apply_fd_override() {
+        echo "Applying systemd override to remove fd:// listener."
+        mkdir -p /etc/systemd/system/docker.service.d
+        cat > /etc/systemd/system/docker.service.d/override.conf <<'OVR'
+[Service]
+ExecStart=
+ExecStart=/usr/bin/dockerd --containerd=/run/containerd/containerd.sock
+OVR
+        systemctl daemon-reload || true
+        systemctl disable docker.socket >/dev/null 2>&1 || true
+        systemctl stop docker.socket >/dev/null 2>&1 || true
+        systemctl restart docker || true
+    }
+
+    local override_applied=0
     # Poll until healthy or timeout
     while (( waited < timeout )); do
         if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
             echo "Docker daemon became healthy after ${waited}s."
             return 0
         fi
+        # Detect fd:// error early
+        if [[ $override_applied -eq 0 ]] && journalctl -u docker.service -n 20 2>/dev/null | grep -q "no sockets found via socket activation"; then
+            apply_fd_override
+            override_applied=1
+            # give some time after override
+            sleep 4
+            continue
+        fi
         sleep 2
         (( waited+=2 ))
     done
 
-    echo "Docker daemon is still unhealthy after ${timeout}s. Attempting fd:// fallback..."
+    echo "Docker daemon is still unhealthy after ${timeout}s. Attempting final fd:// fallback..."
     # Detect common fd:// socket-activation failure and create override without fd://
     if journalctl -u docker.service -n 100 2>/dev/null | grep -q "no sockets found via socket activation"; then
         echo "Applying systemd override to remove fd:// listener."
