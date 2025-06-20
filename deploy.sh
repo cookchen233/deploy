@@ -68,16 +68,30 @@ if ! command -v docker >/dev/null 2>&1; then
 
     if command -v apt-get >/dev/null 2>&1; then
         # Debian / Ubuntu path
-        apt-get update -y >/dev/null 2>&1 || true
-        apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
-        apt-get install -y ca-certificates curl gnupg lsb-release >/dev/null 2>&1
-        mkdir -p /etc/apt/keyrings
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-        echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-          $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-        apt-get update -y >/dev/null 2>&1
-        apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+        echo "Attempting to install docker.io from default Ubuntu repositories..."
+        if apt-get update -y >/dev/null 2>&1 && apt-get install -y docker.io >/dev/null 2>&1; then
+            echo "docker.io installed from default repo."
+        else
+            echo "docker.io package unavailable or failed. Falling back to official Docker repository."
+            apt-get remove -y docker docker-engine docker.io containerd runc >/dev/null 2>&1 || true
+            apt-get install -y ca-certificates curl gnupg lsb-release >/dev/null 2>&1
+            mkdir -p /etc/apt/keyrings
+            # Retry downloading GPG key up to 3 times
+            for i in {1..3}; do
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && break
+                echo "GPG key download failed (attempt $i). Retrying in 5s..."; sleep 5
+            done
+            if [ ! -s /etc/apt/keyrings/docker.gpg ]; then
+                echo "Failed to download GPG key after retries, falling back to convenience script."
+                curl -fsSL https://get.docker.com | sh >/dev/null 2>&1
+            else
+                echo \
+                  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+                  $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+                apt-get update -y >/dev/null 2>&1
+                apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+            fi
+        fi
     elif command -v yum >/dev/null 2>&1; then
         # CentOS / RHEL path
         yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine >/dev/null 2>&1 || true
