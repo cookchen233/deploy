@@ -95,14 +95,26 @@ install_docker() {
     local p_start=${1:-10}
     local p_end=${2:-40}
 
-    # Early exit if Docker exists
+    # Early exit if Docker CLI exists *and* the daemon is healthy. Otherwise attempt to recover
     if command -v docker >/dev/null 2>&1; then
-        echo "Docker already installed."
-        systemctl enable docker.socket
-        systemctl start docker.socket
-        systemctl daemon-reexec
-        systemctl restart docker
-        return 0
+        echo "Docker binary exists. Verifying that the daemon is running..."
+        if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
+            echo "Docker daemon already running."
+            return 0
+        fi
+
+        echo "Docker daemon is not running, attempting to start it..."
+        # Try to (re)enable and start the service. Do *not* fail the script yet ‑ we will re-install if this does not work.
+        systemctl daemon-reexec || true
+        systemctl enable docker >/dev/null 2>&1 || true
+        systemctl start docker >/dev/null 2>&1 || true
+        sleep 3
+        if systemctl is-active --quiet docker && docker info >/dev/null 2>&1; then
+            echo "Docker daemon started successfully after manual start."
+            return 0
+        else
+            echo "Docker daemon still not running – continuing with reinstallation routine..."
+        fi
     fi
 
     # Show progress asynchronously
@@ -252,6 +264,14 @@ if ! command -v docker >/dev/null 2>&1; then
 
     # Enable and start docker service
     (systemctl enable --now docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true)
+
+    # Verify daemon is now active
+    if ! systemctl is-active --quiet docker || ! docker info >/dev/null 2>&1; then
+        echo "Docker daemon failed to start after installation. Collecting logs..."
+        journalctl -xeu docker.service | tail -n 50 || true
+        send_status "failed" 30
+        exit 1
+    fi
 
     kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null || true
 
