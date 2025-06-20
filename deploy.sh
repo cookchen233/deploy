@@ -197,6 +197,9 @@ install_docker() {
         return 1
     fi
     echo "Docker installed successfully."
+    mv /etc/systemd/system/docker.service.d/00-move-library.conf /etc/systemd/system/docker.service.d/00-move-library.conf.bak
+    systemctl daemon-reload
+    systemctl start docker
     systemctl enable docker.socket
     systemctl start docker.socket
     systemctl daemon-reexec
