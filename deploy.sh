@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-# Check if api_server and order_id are provided
+# Check if api_server and UUID are provided
 if [ -z "$1" ] || [ -z "$2" ]; then
-    echo "Usage: $0 <api_server> <order_id>"
+    echo "Usage: $0 <api_server> <uuid>"
     exit 1
 fi
-
+ 
 API_SERVER="$1"
-ORDER_ID="$2"
+UUID="$2"
 
 # Ensure the script is run as root
 if [[ $EUID -ne 0 ]]; then
@@ -38,7 +38,7 @@ send_status() {
     local status="$1"
     local progress="$2"
     local adjusted_progress=$(random_progress "$progress")
-    curl -X POST "${API_SERVER}/api/vps/deploy/status" -H "Content-Type: application/json" -d "{\"orderId\": \"${ORDER_ID}\", \"status\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1 &
+    curl -X POST "${API_SERVER}/api/vps/update/deployment/status" -H "Content-Type: application/json" -d "{\"uuid\": \"${UUID}\", \"taskStatus\": \"${status}\", \"progress\": ${adjusted_progress}}" >/dev/null 2>&1 &
 }
 
 # Background function to update progress during long operations
