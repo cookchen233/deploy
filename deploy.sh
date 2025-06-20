@@ -9,6 +9,30 @@ fi
 API_SERVER="$1"
 ORDER_ID="$2"
 
+# ---------- global safety & helpers ----------
+# Exit on error, undefined var or failed pipe
+set -Eeuo pipefail
+
+# Require root privileges
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Please run this script as root (e.g., sudo $0 <api_server> <order_id>)"
+    exit 1
+fi
+
+# Clear command hash cache (important after installing new binaries)
+hash -r
+
+# Helper – wait until dockerd is responsive (max 30s)
+wait_for_dockerd() {
+    local timeout=30
+    until docker info >/dev/null 2>&1; do
+        ((timeout--)) || return 1
+        sleep 1
+    done
+    return 0
+}
+# ---------------------------------------------
+
 # Function to generate random progress variation (±5%)
 random_progress() {
     local base="$1"
@@ -45,38 +69,34 @@ update_progress() {
 echo "Checking for Docker installation..."
 send_status "checking_docker" 10
 if ! command -v docker >/dev/null 2>&1; then
-    echo "Docker not found, installing Docker..."
+    echo "Docker not found, installing via official script..."
     # Simulate Docker installation progress (10% -> 60% over ~5 min)
     update_progress "installing_docker" 10 60 300 &
     progress_pid=$!
 
-    # 1. Fast-path: install docker.io from the default Ubuntu repositories.
-    if apt-get update >/dev/null 2>&1 && apt-get install -y docker.io >/dev/null 2>&1; then
-        echo "docker.io installed from Ubuntu repository."
+    if curl -fsSL https://get.docker.com | sh; then
+        echo "Docker installation script completed."
     else
-        echo "docker.io package failed, falling back to the official convenience script..."
-        # 2. Fallback: use Docker's official one-liner which handles repos & GPG automatically.
-        curl -fsSL https://get.docker.com | sh >/dev/null 2>&1 || { \
-            echo "Convenience script install failed"; \
-            send_status "failed" 30; \
-            kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null; \
-            exit 1; }
-    fi
-
-    # Ensure Docker service is running & enabled.
-    systemctl start docker >/dev/null 2>&1 || true
-    systemctl enable docker >/dev/null 2>&1 || true
-
-    kill $progress_pid 2>/dev/null
-    wait $progress_pid 2>/dev/null
-    # Ensure progress jumps to 60% if installation completed sooner than expected
-    send_status "installing_docker" 60
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "Failed to install Docker."
+        echo "Docker installation script failed."
         send_status "failed" 30
+        kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
         exit 1
     fi
-    echo "Docker installed successfully."
+
+    # Enable and start docker service (non-fatal if already active)
+    systemctl enable --now docker >/dev/null 2>&1 || true
+
+    # Wait for dockerd socket to be ready (max 30s)
+    if ! wait_for_dockerd; then
+        echo "dockerd did not become ready in time."
+        send_status "failed" 30
+        kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
+        exit 1
+    fi
+
+    kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null
+    send_status "installing_docker" 60
+    echo "Docker installed and ready."
 else
     echo "Docker is already installed."
 fi
