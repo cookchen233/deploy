@@ -88,8 +88,26 @@ install_docker() {
             # Refresh command lookup cache
             hash -r
             if ! command -v docker >/dev/null 2>&1; then
-                echo "docker binary still missing, installing docker-ce-cli..."
-                apt-get install -y docker-ce-cli docker-ce containerd.io docker-buildx-plugin docker-compose-plugin
+                echo "docker binary still missing after docker.io. Attempting remedial steps..."
+                # Some Ubuntu versions install only docker.io binary. Create symlink if present
+                if command -v docker.io >/dev/null 2>&1; then
+                    ln -sf $(command -v docker.io) /usr/local/bin/docker || true
+                    hash -r
+                fi
+            fi
+            # If still missing try snap
+            if ! command -v docker >/dev/null 2>&1 && command -v snap >/dev/null 2>&1; then
+                echo "Installing Docker via snap as fallback..."
+                snap install docker || true
+                snap connect docker:network-control || true
+                snap connect docker:network-observe || true
+                snap connect docker:firewall-control || true
+                hash -r
+            fi
+            # Final fallback to convenience script
+            if ! command -v docker >/dev/null 2>&1; then
+                echo "Final fallback: running get.docker.com script..."
+                curl -fsSL https://get.docker.com | sh
             fi
         else
             echo "Switching to official Docker repo..."
