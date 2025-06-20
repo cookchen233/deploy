@@ -59,6 +59,35 @@ update_progress() {
 }
 
 # -----------------------------
+# Ensure Git installation
+ensure_git() {
+    local p_start=${1:-3}
+    local p_end=${2:-8}
+    if command -v git >/dev/null 2>&1; then
+        echo "git already installed."
+        return 0
+    fi
+    update_progress "installing_git" "$p_start" "$p_end" 30 &
+    local gid=$!
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -y >/dev/null 2>&1 && apt-get install -y git >/dev/null 2>&1
+    elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
+        (command -v dnf || command -v yum) install -y git >/dev/null 2>&1
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm git >/dev/null 2>&1
+    elif command -v zypper >/dev/null 2>&1; then
+        zypper install -y git >/dev/null 2>&1
+    else
+        echo "Unknown package manager. Attempting to install git via get-git script..."
+        curl -fsSL https://get.gitcdn.xyz | bash >/dev/null 2>&1 || true
+    fi
+    kill $gid 2>/dev/null; wait $gid 2>/dev/null || true
+    if ! command -v git >/dev/null 2>&1; then
+        echo "Git installation failed."; return 1; fi
+    echo "git installed successfully."; return 0
+}
+
+# -----------------------------
 # Reliable Docker installation
 # -----------------------------
 install_docker() {
@@ -153,6 +182,13 @@ install_docker() {
     echo "Docker installed successfully."
     return 0
 }
+
+# Ensure Git is installed
+echo "Ensuring Git is installed..."
+if ! ensure_git 3 8; then
+    send_status "failed" 8
+    exit 1
+fi
 
 # Ensure Docker is installed using reliable function
 echo "Ensuring Docker is installed..."
