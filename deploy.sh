@@ -58,7 +58,84 @@ update_progress() {
     done
 }
 
-# Check if Docker is installed
+# -----------------------------
+# Reliable Docker installation
+# -----------------------------
+install_docker() {
+    local p_start=${1:-10}
+    local p_end=${2:-40}
+
+    # Early exit if Docker exists
+    if command -v docker >/dev/null 2>&1; then
+        echo "Docker already installed."
+        return 0
+    fi
+
+    # Show progress asynchronously
+    update_progress "installing_docker" "$p_start" "$p_end" 180 &
+    local progress_pid=$!
+
+    # Helper to finish progress
+    finish() { kill $progress_pid 2>/dev/null; wait $progress_pid 2>/dev/null || true; }
+    trap finish EXIT
+
+    # Detect package manager and install
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "Using apt-get path..."
+        # Try quick path
+        if apt-get update -y && apt-get install -y docker.io; then
+            echo "docker.io installed via default repo."
+        else
+            echo "Switching to official Docker repo..."
+            apt-get remove -y docker docker-engine docker.io containerd runc || true
+            apt-get install -y ca-certificates curl gnupg lsb-release
+            install -m 0755 -d /etc/apt/keyrings
+            for i in {1..3}; do
+                curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && break || {
+                    echo "GPG fetch failed ($i). Retrying in 5s..."; sleep 5; }
+            done
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
+            apt-get update -y && apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        fi
+    elif command -v yum >/dev/null 2>&1 || command -v dnf >/dev/null 2>&1; then
+        local YUM_TOOL="$(command -v dnf || command -v yum)"
+        echo "Using $YUM_TOOL path..."
+        $YUM_TOOL remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine || true
+        $YUM_TOOL -y install yum-utils curl
+        yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+        $YUM_TOOL -y install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "Using pacman path..."
+        pacman -Sy --noconfirm docker docker-compose
+    elif command -v zypper >/dev/null 2>&1; then
+        echo "Using zypper path..."
+        zypper refresh && zypper install -y docker docker-compose
+    else
+        echo "Unknown package manager, falling back to convenience script..."
+        curl -fsSL https://get.docker.com | sh
+    fi
+
+    # Enable and start service where possible
+    systemctl enable --now docker 2>/dev/null || service docker start 2>/dev/null || true
+
+    finish
+    trap - EXIT
+
+    # Final check
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Docker installation failed after all attempts."
+        return 1
+    fi
+    echo "Docker installed successfully."
+    return 0
+}
+
+# Ensure Docker is installed using reliable function
+echo "Ensuring Docker is installed..."
+if ! install_docker 10 40; then
+    send_status "failed" 40
+    exit 1
+fi
 echo "Checking for Docker installation..."
 send_status "checking_docker" 10
 if ! command -v docker >/dev/null 2>&1; then
