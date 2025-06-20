@@ -36,6 +36,14 @@ wait_for_dockerd() {
 }
 # ---------------------------------------------
 
+# Disable any unreachable docker apt sources to speed up apt operations
+disable_docker_apt_sources() {
+    echo "[INFO] Disabling existing Docker APT sources to avoid long timeouts..."
+    find /etc/apt/sources.list.d -name '*docker*.list' -exec rm -f {} + 2>/dev/null || true
+    # Also comment lines in main sources.list referencing docker if any
+    sed -i.bak '/download.docker.com/s/^/#/g' /etc/apt/sources.list 2>/dev/null || true
+}
+
 # Install Docker using official script with retry; return 0 on success, 1 on failure
 install_docker_official() {
     local retries=5
@@ -97,6 +105,7 @@ if ! command -v docker >/dev/null 2>&1; then
     progress_pid=$!
 
     # First, attempt fast-path via Ubuntu/Debian main repo (avoids running Docker script that removes repos)
+    disable_docker_apt_sources
     if command -v apt-get >/dev/null 2>&1 && \
        apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=10 update -qq && \
        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io; then
