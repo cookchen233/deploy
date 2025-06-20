@@ -98,7 +98,8 @@ install_docker() {
     # Early exit if Docker exists
     if command -v docker >/dev/null 2>&1; then
         echo "Docker already installed."
-        systemctl start docker
+        systemctl daemon-reexec
+        systemctl restart docker
         return 0
     fi
 
@@ -182,7 +183,8 @@ install_docker() {
         return 1
     fi
     echo "Docker installed successfully."
-    systemctl start docker
+    systemctl daemon-reexec
+    systemctl restart docker
     return 0
 }
 
