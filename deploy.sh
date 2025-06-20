@@ -96,12 +96,15 @@ if ! command -v docker >/dev/null 2>&1; then
     update_progress "installing_docker" 10 60 300 &
     progress_pid=$!
 
-    if install_docker_official; then
-        echo "Docker installation script completed."
+    # First, attempt fast-path via Ubuntu/Debian main repo (avoids running Docker script that removes repos)
+    if command -v apt-get >/dev/null 2>&1 && \
+       apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=10 update -qq && \
+       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io; then
+        echo "docker.io package installed from distribution repository."
     else
-        echo "Official script still failing, attempting apt repository install..."
-        if command -v apt-get >/dev/null 2>&1 && apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq docker.io; then
-            echo "docker.io package installed as fallback."
+        echo "Distribution package unavailable, falling back to official script..."
+        if install_docker_official; then
+            echo "Docker installation script completed."
         else
             echo "All Docker installation methods failed."
             send_status "failed" 30
