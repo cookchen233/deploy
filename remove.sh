@@ -25,6 +25,7 @@ done
 # Detect package manager and remove packages
 remove_pkgs() {
   if command -v apt-get >/dev/null 2>&1; then
+    apt-get purge -y 'docker.io' || true
     apt-get purge -y docker\* containerd.io docker-compose-plugin docker-buildx-plugin || true
     apt-get autoremove -y || true
     rm -f /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg 2>/dev/null || true
@@ -49,13 +50,19 @@ remove_pkgs
 rm -rf /var/lib/docker /var/lib/containerd /etc/docker /run/docker 2>/dev/null || true
 rm -rf "$HOME/.docker" 2>/dev/null || true
 
+# Remove docker snap if present
+if command -v snap >/dev/null 2>&1 && snap list | grep -q '^docker'; then
+  log "Removing docker snap..."
+  snap remove --purge docker || true
+fi
+
 # Remove binaries that may have been installed manually
 for bin in docker dockerd docker-compose containerd; do
   rm -f "/usr/local/bin/$bin" "/usr/bin/$bin" 2>/dev/null || true
 done
 
 # Final check
-if command -v docker >/dev/null 2>&1; then
+if command -v docker >/dev/null 2>&1 || (command -v snap >/dev/null 2>&1 && snap list | grep -q '^docker'); then
   log "❌ Docker still present. Manual cleanup needed."
   exit 1
 fi
