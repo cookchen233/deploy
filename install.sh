@@ -395,30 +395,42 @@ fi
 send_status "checking_image" 50
 if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "Pulling 3x-ui Docker image..."
-    send_status "pulling_image" 70
+    # Simulate pulling progress between 55% and 70%
+    update_progress "pulling_image" 55 70 180 &
+    pull_pid=$!
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
+        kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
         echo "Failed to pull 3x-ui image."
         send_status "failed" 70
         exit 1
     fi
+    # Stop progress simulation and send final status
+    kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
+    send_status "pulled_image" 70
 else
     echo "3x-ui image already exists."
+    send_status "image_exists" 60
 fi
 
 # Stop and remove existing 3x-ui container if running
 if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     echo "Stopping and removing existing 3x-ui container..."
-    send_status "cleaning_container" 80
+    update_progress "cleaning_container" 80 85 30 &
+    clean_pid=$!
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
+    kill $clean_pid 2>/dev/null; wait $clean_pid 2>/dev/null || true
 fi
 
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
-send_status "starting_container" 90
+update_progress "starting_container" 90 98 60 &
+start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
+    kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "3x-ui container started successfully."
     send_status "success" 100
 else
+    kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "Failed to start 3x-ui container."
     send_status "failed" 90
     exit 1
