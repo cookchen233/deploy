@@ -28,16 +28,25 @@ fi
 
 # Function to generate random progress variation (±5%)
 random_progress() {
+    # Produce an integer progress value with ±5 variation, clamped between 0 and 100
     local base="$1"
-    local variation=$((RANDOM % 11 - 5)) # Random number between -5 and 5
-    echo "$base + $variation" | bc
+    local variation=$((RANDOM % 11 - 5)) # -5 .. +5
+    local value=$((base + variation))
+    if (( value < 0 )); then value=0; fi
+    if (( value > 100 )); then value=100; fi
+    echo "$value"
 }
 
 # Function to send status update (run in background)
 send_status() {
     local message="$1"
     local progress="$2"
-    local adjusted_progress=$(random_progress "$progress")
+
+    # For terminal statuses, do not apply variation; otherwise introduce small randomness
+    local adjusted_progress="${progress}"
+    if [[ "$1" != "success" && "$1" != "failed" ]]; then
+        adjusted_progress=$(random_progress "$progress")
+    fi
 
     local taskStatus=1
     if [[ "$message" == "success" ]]; then
