@@ -549,25 +549,13 @@ if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     kill $clean_pid 2>/dev/null; wait $clean_pid 2>/dev/null || true
 fi
 
-# Helper to terminate background progress jobs
-kill_progress_jobs() {
-    # Kill any update_progress or progress_transition background jobs to avoid overrides
-    local jobs_to_kill=$(jobs -p)
-    if [[ -n "$jobs_to_kill" ]]; then
-        kill $jobs_to_kill 2>/dev/null || true
-    fi
-}
-
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
 progress_transition "starting_container" 98 20 &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
-    kill_progress_jobs
     echo "3x-ui container started successfully."
-    # Ensure a final progress=100 update with deployment status before success flag
-    send_status "starting_container" 100
     send_status "success" 100
 else
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
