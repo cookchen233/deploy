@@ -113,7 +113,9 @@ send_status() {
 # Background function to update progress during long operations
 # Smoothly transition to a target progress if it is ahead of the current one
 progress_transition() {
-    # Smooth forward progress toward target by sending updates for every percentage point
+    # Smooth forward progress toward target.
+    # Guarantees at least +2% bump and optionally creates a mid-point if jump is huge.
+
     local status="$1"
     local target="$2"
     local duration="${3:-15}"
@@ -123,14 +125,26 @@ progress_transition() {
     if [[ -f "$progress_state_file" ]]; then
         current=$(cat "$progress_state_file")
     fi
-    
-    # Don't go backwards
+    # Clamp current
+    if (( current < 0 )); then current=0; fi
+    if (( current > 100 )); then current=100; fi
+
+        # If target is not ahead, bump by +2 to avoid duplicates
     if (( target <= current )); then
-        return
+        target=$(( current + 2 ))
+        if (( target > 100 )); then target=100; fi
     fi
-    
-    # Always use update_progress to ensure we hit every percentage point
-    update_progress "$status" "$current" "$target" "$duration"
+
+    # If the gap is too large (>20), first transition to an intermediate value to avoid steep jump.
+    local gap=$(( target - current ))
+    if (( gap > 20 )); then
+        local mid=$(( current + gap / 2 ))
+        update_progress "$status" "$current" "$mid" "$(( duration /2 ))" &
+        # After mid finishes, continue to final in background
+        ( sleep $(( duration /2 )); update_progress "$status" "$mid" "$target" "$(( duration /2 ))" & ) &
+    else
+        update_progress "$status" "$current" "$target" "$duration" &
+    fi
 }
 
 update_progress() {
@@ -146,23 +160,28 @@ update_progress() {
         end_progress=$start_progress
     fi
 
-    # For every individual percentage point
-    local step_size=1
-    # Calculate delay between percentage updates
-    local interval=$(echo "scale=2; $duration / ($end_progress - $start_progress)" | bc -l)
-    
-    # Adjust interval if too small to avoid flooding
-    if (( $(echo "$interval < 0.1" | bc -l) )); then
-        interval="0.1"
+    # Determine step count: at most 1 update per second to avoid log flooding.
+    local steps=$(( end_progress - start_progress ))
+    if (( steps < 1 )); then
+        steps=1
+    elif (( steps > 100 )); then
+        steps=100
     fi
-    
-    # Send progress update for EVERY number from start to end
-    for ((current=$start_progress; current<=$end_progress; current++)); do
-        send_status "$status" "$current"
-        # Sleep proportionally
-        if (( current < end_progress )); then  # Don't sleep after the last update
-            sleep $interval
-        fi
+    # If steps exceed duration, cap to duration so sleep interval >=1s
+    if (( steps > duration )); then
+        steps=$duration
+    fi
+    # Re-calculate step size to hit end_progress precisely
+    local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
+    local interval=$(echo "$duration / $steps" | bc -l)
+
+    for ((i=1; i<=steps; i++)); do
+        local current_progress=$(echo "$start_progress + $i * $step_size" | bc -l)
+        send_status "$status" "$current_progress"
+        # bc may produce floats; round to int before sleeping to avoid errors when interval<0.2
+        local sleep_int=$(printf "%.2f" "$interval")
+        # Use "sleep" only if >0.02s to avoid tight loops
+        awk -v s="$sleep_int" 'BEGIN { if (s>0.02) system("sleep " s) }'
     done
 }
 
@@ -501,8 +520,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     else
         start_pull=55
     fi
-    # Use more granular progress updates for Docker image pulling (52-90)
-    update_progress "pulling_image" "$start_pull" 90 180 &
+    update_progress "pulling_image" "$start_pull" 70 180 &
     pull_pid=$!
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
         kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
@@ -512,24 +530,16 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     fi
     # Stop progress simulation and send final status
     kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
-    # Allow progress to reach exactly 90%
-    send_status "pulled_image" 90
+    progress_transition "pulled_image" 70 10
 else
     echo "3x-ui image already exists."
-    # Send updates for each percentage point from current progress to 90%
-    current=0
-    if [[ -f "$progress_state_file" ]]; then
-        current=$(cat "$progress_state_file")
-    fi
-    if (( current < 90 )); then
-        update_progress "image_exists" "$current" 90 30
-    fi
+    progress_transition "image_exists" 60 8
 fi
 
 # Stop and remove existing 3x-ui container if running
 if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     echo "Stopping and removing existing 3x-ui container..."
-    update_progress "cleaning_container" 90 95 30 &
+    update_progress "cleaning_container" 80 85 30 &
     clean_pid=$!
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
     kill $clean_pid 2>/dev/null; wait $clean_pid 2>/dev/null || true
@@ -537,14 +547,11 @@ fi
 
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
-update_progress "starting_container" 95 99 30 &
+update_progress "starting_container" 90 98 60 &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "3x-ui container started successfully."
-    # Make sure we send 99% before sending 100%
-    send_status "final_step" 99
-    sleep 1
     send_status "success" 100
 else
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
