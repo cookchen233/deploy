@@ -116,14 +116,32 @@ update_progress() {
     local start_progress="$2"
     local end_progress="$3"
     local duration="$4"
-    local steps=20
-    local interval=$(echo "$duration / $steps" | bc)
+
+    # Ensure numeric values
+    start_progress=$(printf "%.0f" "$start_progress")
+    end_progress=$(printf "%.0f" "$end_progress")
+    if (( end_progress < start_progress )); then
+        end_progress=$start_progress
+    fi
+
+    # Emit one update per integer increment for maximum smoothness (clamp to 100 steps)
+    local steps=$(( end_progress - start_progress ))
+    if (( steps < 1 )); then
+        steps=1
+    elif (( steps > 100 )); then
+        steps=100
+    fi
+    # Re-calculate step size to hit end_progress precisely
     local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
+    local interval=$(echo "$duration / $steps" | bc -l)
 
     for ((i=1; i<=steps; i++)); do
         local current_progress=$(echo "$start_progress + $i * $step_size" | bc -l)
         send_status "$status" "$current_progress"
-        sleep "$interval"
+        # bc may produce floats; round to int before sleeping to avoid errors when interval<0.2
+        local sleep_int=$(printf "%.2f" "$interval")
+        # Use "sleep" only if >0.02s to avoid tight loops
+        awk -v s="$sleep_int" 'BEGIN { if (s>0.02) system("sleep " s) }'
     done
 }
 
