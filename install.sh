@@ -527,6 +527,9 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     }
 
     # 启动一个后台进程来实时更新进度，同时在前台执行Docker拉取
+    progress_control_file="/tmp/progress_control_${UUID}"
+    echo "running" > "$progress_control_file"
+    
     (
         # 获取当前进度
         current=0
@@ -541,12 +544,8 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
             # 确保从当前进度的下一个开始
             current=$((current + 1))
             
-            # 创建一个临时文件用于控制进度更新
-            progress_control_file="/tmp/progress_control_${UUID}"
-            echo "running" > "$progress_control_file"
-            
             # 循环更新进度直到达到目标或拉取完成
-            while [[ "$(cat "$progress_control_file")" == "running" ]] && (( current < target )); do
+            while [[ -f "$progress_control_file" ]] && [[ "$(cat "$progress_control_file" 2>/dev/null)" == "running" ]] && (( current < target )); do
                 send_status "pulling_image" "$current"
                 
                 # 计算下一个延迟时间
@@ -566,18 +565,35 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     echo "Pulling Docker image (this may take a while)..."
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
         # Docker拉取失败，停止进度更新
-        echo "failed" > "/tmp/progress_control_${UUID}"
-        kill $progress_updater_pid 2>/dev/null
+        echo "failed" > "$progress_control_file"
+        sleep 0.5
+        # 确保后台进程终止
+        if kill -0 $progress_updater_pid 2>/dev/null; then
+            kill $progress_updater_pid 2>/dev/null
+            sleep 0.5
+        fi
+        # 清理控制文件
+        rm -f "$progress_control_file"
         echo "Failed to pull 3x-ui image."
         send_status "failed" 70
         exit 1
     fi
     
     # Docker拉取成功，通知进度更新终止
-    echo "completed" > "/tmp/progress_control_${UUID}"
+    echo "completed" > "$progress_control_file"
+    echo "Docker image pull completed. Waiting for progress updates to finish..."
     
-    # 等待后台进程处理完毕
-    kill $progress_updater_pid 2>/dev/null; wait $progress_updater_pid 2>/dev/null || true
+    # 给后台进程一些时间来检测状态变化并退出
+    sleep 1
+    
+    # 确保后台进程终止
+    if kill -0 $progress_updater_pid 2>/dev/null; then
+        kill $progress_updater_pid 2>/dev/null
+        sleep 0.5
+    fi
+    
+    # 清理控制文件
+    rm -f "$progress_control_file"
     
     echo "Docker image pull completed. Finishing progress updates..."
     
