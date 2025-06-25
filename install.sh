@@ -534,8 +534,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     fi
     # Stop progress simulation and send final status
     kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
-    # Single final update for pulled_image without background smoothing to prevent overlap
-    send_status "pulled_image" 70
+    progress_transition "pulled_image" 70 10
 else
     echo "3x-ui image already exists."
     progress_transition "image_exists" 60 8
