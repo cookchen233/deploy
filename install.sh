@@ -501,33 +501,99 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     else
         start_pull=55
     fi
-        # For Docker pull, we need to GUARANTEE all progress values are reported
-    # So we'll do the pull first, then simulate the progress AFTER it's done
-    echo "Pulling Docker image (this may take a while)..."
+        # 创建一个获取进度的函数，采用非线性曲线，越接近目标值越慢
+    calculate_next_delay() {
+        local current=$1
+        local target=$2
+        
+        # 计算距离目标的距离
+        local distance=$((target - current))
+        
+        # 基础延迟时间（秒）
+        local base_delay=0.05
+        
+        # 随着接近目标值，延迟增加
+        # 当距离大时，基本是基础延迟
+        # 当距离小时，延迟会逐渐增加
+        local factor=$(echo "scale=4; 1 + (($target - $current) / 32) ^ -2" | bc -l)
+        
+        # 计算最终延迟，但不超过2秒
+        local delay=$(echo "scale=4; $base_delay * $factor" | bc -l)
+        if (( $(echo "$delay > 2" | bc -l) )); then
+            delay=2
+        fi
+        
+        echo $delay
+    }
+
+    # 启动一个后台进程来实时更新进度，同时在前台执行Docker拉取
+    (
+        # 获取当前进度
+        current=0
+        if [[ -f "$progress_state_file" ]]; then
+            current=$(cat "$progress_state_file")
+        fi
+        
+        target=89  # 目标进度
+        
+        # 如果当前进度小于目标，则开始更新
+        if (( current < target )); then
+            # 确保从当前进度的下一个开始
+            current=$((current + 1))
+            
+            # 创建一个临时文件用于控制进度更新
+            progress_control_file="/tmp/progress_control_${UUID}"
+            echo "running" > "$progress_control_file"
+            
+            # 循环更新进度直到达到目标或拉取完成
+            while [[ "$(cat "$progress_control_file")" == "running" ]] && (( current < target )); do
+                send_status "pulling_image" "$current"
+                
+                # 计算下一个延迟时间
+                delay=$(calculate_next_delay "$current" "$target")
+                
+                # 休眠相应时间
+                sleep $delay
+                
+                # 更新进度
+                current=$((current + 1))
+            done
+        fi
+    ) &
+    progress_updater_pid=$!
     
-    # Do the actual pull first without sending progress updates
+    # 在前台执行Docker拉取
+    echo "Pulling Docker image (this may take a while)..."
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
+        # Docker拉取失败，停止进度更新
+        echo "failed" > "/tmp/progress_control_${UUID}"
+        kill $progress_updater_pid 2>/dev/null
         echo "Failed to pull 3x-ui image."
         send_status "failed" 70
         exit 1
     fi
     
-    echo "Docker image pull completed. Sending progress updates..."
+    # Docker拉取成功，通知进度更新终止
+    echo "completed" > "/tmp/progress_control_${UUID}"
     
-    # Now that pull is complete, send ALL progress updates sequentially
-    # Get the current progress
+    # 等待后台进程处理完毕
+    kill $progress_updater_pid 2>/dev/null; wait $progress_updater_pid 2>/dev/null || true
+    
+    echo "Docker image pull completed. Finishing progress updates..."
+    
+    # 获取当前进度
     current_progress=0
     if [[ -f "$progress_state_file" ]]; then
         current_progress=$(cat "$progress_state_file")
     fi
     
-    # If current progress is under 89, step through all values up to 89
+    # 如果进度尚未达到89，快速补足剩余进度
     if (( current_progress < 89 )); then
-        # Send every single progress value between current+1 and 89
+        # 快速完成剩余进度
         for ((i=current_progress+1; i<=89; i++)); do
             send_status "pulling_image" "$i"
-            # Use a shorter sleep to move through quickly but visibly
-            sleep 0.1
+            # 拉取已完成，加速进度更新
+            sleep 0.05
         fi
     fi
     
