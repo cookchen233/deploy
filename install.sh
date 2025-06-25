@@ -58,19 +58,42 @@ send_status() {
         adjusted_progress=100
     fi
 
-    # Monotonic progress: never decrease compared to the last value we reported
+    # Monotonic progress across concurrent updates using file lock
     local progress_state_file="/tmp/progress_${UUID}"
-    local last_progress=0
-    if [[ -f "$progress_state_file" ]]; then
-        last_progress=$(cat "$progress_state_file")
+    local lock_file="${progress_state_file}.lock"
+
+    if command -v flock >/dev/null 2>&1; then
+        (
+            flock -x 200
+            local last_progress=0
+            if [[ -f "$progress_state_file" ]]; then
+                last_progress=$(cat "$progress_state_file")
+            fi
+            if (( adjusted_progress < last_progress )); then
+                adjusted_progress=$last_progress
+            fi
+            if (( adjusted_progress > 100 )); then
+                adjusted_progress=100
+            fi
+            echo "$adjusted_progress" > "$progress_state_file"
+        ) 200>"$lock_file"
+    else
+        # Fallback without flock (best-effort)
+        local last_progress=0
+        if [[ -f "$progress_state_file" ]]; then
+            last_progress=$(cat "$progress_state_file")
+        fi
+        if (( adjusted_progress < last_progress )); then
+            adjusted_progress=$last_progress
+        fi
+        if (( adjusted_progress > 100 )); then
+            adjusted_progress=100
+        fi
+        echo "$adjusted_progress" > "$progress_state_file"
     fi
-    if (( adjusted_progress < last_progress )); then
-        adjusted_progress=$last_progress
-    fi
-    if (( adjusted_progress > 100 )); then
-        adjusted_progress=100
-    fi
-    echo "$adjusted_progress" > "$progress_state_file"
+
+    # Reload the possibly updated value so that curl sends the locked value
+    adjusted_progress=$(cat "$progress_state_file")
 
     local taskStatus=1
     if [[ "$message" == "success" ]]; then
