@@ -594,7 +594,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
             send_status "pulling_image" "$i"
             # 拉取已完成，加速进度更新
             sleep 0.05
-        fi
+        done
     fi
     
     # Allow progress to reach exactly 90%
