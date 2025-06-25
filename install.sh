@@ -618,6 +618,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
 else
     echo "3x-ui image already exists."
     # Send updates for each percentage point from current progress to 90%
+    progress_state_file="/tmp/progress_${UUID}"
     current=0
     if [[ -f "$progress_state_file" ]]; then
         current=$(cat "$progress_state_file")
@@ -628,6 +629,7 @@ else
 fi
 
 # Stop and remove existing 3x-ui container if running
+progress_state_file="/tmp/progress_${UUID}"
 if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     echo "Stopping and removing existing 3x-ui container..."
     update_progress "cleaning_container" 90 95 30 &
@@ -638,6 +640,7 @@ fi
 
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
+progress_state_file="/tmp/progress_${UUID}"
 update_progress "starting_container" 95 99 30 &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
