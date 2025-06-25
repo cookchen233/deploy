@@ -139,7 +139,7 @@ update_progress() {
     local start_progress="$2"
     local end_progress="$3"
     local duration="$4"
-    local details="$5"
+    local details="${5:-}"
 
     # Ensure numeric values
     start_progress=$(printf "%.0f" "$start_progress")
