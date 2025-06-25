@@ -30,8 +30,15 @@ fi
 random_progress() {
     # Produce an integer progress value with ±5 variation, clamped between 0 and 100
     local base="$1"
+    
+    # Convert the base progress value (which may be a float) to an integer.
+    local base_int=$(printf "%.0f" "$base")
+
     local variation=$((RANDOM % 11 - 5)) # -5 .. +5
-    local value=$((base + variation))
+    
+    # Use the new integer variable for the calculation
+    local value=$((base_int + variation))
+
     if (( value < 0 )); then value=0; fi
     if (( value > 100 )); then value=100; fi
     echo "$value"
