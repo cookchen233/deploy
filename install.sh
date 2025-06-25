@@ -147,12 +147,16 @@ update_progress() {
         end_progress=$start_progress
     fi
 
-    # Emit one update per integer increment for maximum smoothness (clamp to 100 steps)
+    # Determine step count: at most 1 update per second to avoid log flooding.
     local steps=$(( end_progress - start_progress ))
     if (( steps < 1 )); then
         steps=1
     elif (( steps > 100 )); then
         steps=100
+    fi
+    # If steps exceed duration, cap to duration so sleep interval >=1s
+    if (( steps > duration )); then
+        steps=$duration
     fi
     # Re-calculate step size to hit end_progress precisely
     local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
@@ -329,7 +333,7 @@ if ! install_docker 10 40; then
     exit 1
 fi
 echo "Checking for Docker installation..."
-send_status "checking_docker" 10
+progress_transition "checking_docker" 15 6
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing..."
     update_progress "installing_docker" 10 30 120 &
