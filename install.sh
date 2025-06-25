@@ -567,22 +567,14 @@ echo "Starting 3x-ui Docker container..."
 progress_transition "starting_container" 98 20 &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
-    kill $start_pid 2>/dev/null || true; wait $start_pid 2>/dev/null || true
+    kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     kill_progress_jobs
     echo "3x-ui container started successfully."
     # Ensure a final progress=100 update with deployment status before success flag
     send_status "starting_container" 100
     send_status "success" 100
 else
-    kill $start_pid 2>/dev/null || true; wait $start_pid 2>/dev/null || true
-    # Double-check if the container actually started despite a non-zero exit status.
-    if docker ps --filter "name=3x-ui" --filter "status=running" -q | grep -q .; then
-        kill_progress_jobs
-        echo "3x-ui container started successfully (detected after initial non-zero exit)."
-        send_status "starting_container" 100
-        send_status "success" 100
-        exit 0
-    fi
+    kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "Failed to start 3x-ui container."
     send_status "failed" 90
     exit 1
