@@ -175,16 +175,12 @@ update_progress() {
     local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
     local interval=$(echo "$duration / $steps" | bc -l)
 
-    local prev_int=$start_progress
     for ((i=1; i<=steps; i++)); do
         local current_progress=$(echo "$start_progress + $i * $step_size" | bc -l)
-        local int_progress=$(printf "%.0f" "$current_progress")
-        if (( int_progress > prev_int )); then
-            prev_int=$int_progress
-            send_status "$status" "$int_progress"
-        fi
-        # Sleep interval control
+        send_status "$status" "$current_progress"
+        # bc may produce floats; round to int before sleeping to avoid errors when interval<0.2
         local sleep_int=$(printf "%.2f" "$interval")
+        # Use "sleep" only if >0.02s to avoid tight loops
         awk -v s="$sleep_int" 'BEGIN { if (s>0.02) system("sleep " s) }'
     done
 }
@@ -551,7 +547,7 @@ fi
 
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
-progress_transition "starting_container" 98 20 &
+update_progress "starting_container" 90 98 60 &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
