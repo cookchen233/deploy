@@ -550,7 +550,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
             
             # 循环更新进度直到达到目标或拉取完成
             while [[ -f "$progress_control_file" ]] && [[ "$(cat "$progress_control_file" 2>/dev/null)" == "running" ]] && (( current < target )); do
-                send_status "pulling_image" "$current" "Pulling 3x-ui Docker image, progress: $current%, please wait patiently"
+                send_status "pulling image" "$current" "Pulling 3x-ui Docker image, progress: $current%, please wait patiently"
                 
                 # 计算下一个延迟时间
                 delay=$(calculate_next_delay "$current" "$target")
@@ -611,14 +611,14 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     if (( current_progress < 89 )); then
         # 快速完成剩余进度
         for ((i=current_progress+1; i<=89; i++)); do
-            send_status "pulling_image" "$i" "Docker image pull completed, processing image data, progress: $i%"
+            send_status "pulling image" "$i" "Docker image pull completed, processing image data, progress: $i%"
             # 拉取已完成，加速进度更新
             sleep 0.05
         done
     fi
     
     # Allow progress to reach exactly 90%
-    send_status "pulled_image" 90 "Docker镜像拉取和处理已完成，准备进行容器部署"
+    send_status "pulled image" 90 "Docker镜像拉取和处理已完成，准备进行容器部署"
 else
     echo "3x-ui image already exists."
     # Send updates for each percentage point from current progress to 90%
@@ -651,7 +651,7 @@ if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "3x-ui container started successfully."
     # Make sure we send 99% before sending 100%
-    send_status "final_step" 99 "3x-ui container started successfully, completing final configuration"
+    send_status "final step" 99 "3x-ui container started successfully, completing final configuration"
     sleep 1
     send_status "success" 100 "Deployment complete! 3x-ui has been successfully installed and started. Service is accessible via port 2053"
 else
