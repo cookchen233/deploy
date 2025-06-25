@@ -552,11 +552,8 @@ fi
 
 # Helper to terminate background progress jobs
 kill_progress_jobs() {
-    # Kill any update_progress or progress_transition background jobs to avoid overrides.
-    # `jobs -p` exits with status 1 when there are no jobs; that would normally
-    # terminate the script because of `set -e`. We therefore ignore its exit
-    # status explicitly.
-    local jobs_to_kill="$(jobs -p 2>/dev/null || true)"
+    # Kill any update_progress or progress_transition background jobs to avoid overrides
+    local jobs_to_kill=$(jobs -p)
     if [[ -n "$jobs_to_kill" ]]; then
         kill $jobs_to_kill 2>/dev/null || true
     fi
