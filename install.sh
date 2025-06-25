@@ -49,11 +49,28 @@ send_status() {
     local message="$1"
     local progress="$2"
 
-    # For terminal statuses, do not apply variation; otherwise introduce small randomness
-    local adjusted_progress="${progress}"
-    if [[ "$1" != "success" && "$1" != "failed" ]]; then
-        adjusted_progress=$(random_progress "$progress")
+    # Ensure progress is an integer and never moves backwards
+    local adjusted_progress
+    adjusted_progress=$(printf "%.0f" "$progress")
+
+    # Force to 100% on explicit success
+    if [[ "$message" == "success" ]]; then
+        adjusted_progress=100
     fi
+
+    # Monotonic progress: never decrease compared to the last value we reported
+    local progress_state_file="/tmp/progress_${UUID}"
+    local last_progress=0
+    if [[ -f "$progress_state_file" ]]; then
+        last_progress=$(cat "$progress_state_file")
+    fi
+    if (( adjusted_progress < last_progress )); then
+        adjusted_progress=$last_progress
+    fi
+    if (( adjusted_progress > 100 )); then
+        adjusted_progress=100
+    fi
+    echo "$adjusted_progress" > "$progress_state_file"
 
     local taskStatus=1
     if [[ "$message" == "success" ]]; then
@@ -76,7 +93,7 @@ update_progress() {
     local start_progress="$2"
     local end_progress="$3"
     local duration="$4"
-    local steps=10
+    local steps=20
     local interval=$(echo "$duration / $steps" | bc)
     local step_size=$(echo "($end_progress - $start_progress) / $steps" | bc -l)
 
