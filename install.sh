@@ -179,7 +179,7 @@ ensure_git() {
         echo "git already installed."
         return 0
     fi
-    update_progress "installing_git" "$p_start" "$p_end" 30 &
+    update_progress "installing git" "$p_start" "$p_end" 30 &
     local gid=$!
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -y >/dev/null 2>&1 && apt-get install -y git >/dev/null 2>&1
@@ -230,7 +230,7 @@ install_docker() {
     fi
 
     # Show progress asynchronously
-    update_progress "installing_docker" "$p_start" "$p_end" 180 &
+    update_progress "installing docker" "$p_start" "$p_end" 180 &
     local progress_pid=$!
 
     # Helper to finish progress
@@ -334,7 +334,7 @@ echo "Checking for Docker installation..."
 progress_transition "checking_docker" 15 6
 if ! command -v docker >/dev/null 2>&1; then
     echo "Docker not found, installing..."
-    update_progress "installing_docker" 10 30 120 &
+    update_progress "installing docker" 10 30 120 &
     progress_pid=$!
 
     if command -v apt-get >/dev/null 2>&1; then
@@ -618,7 +618,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     fi
     
     # Allow progress to reach exactly 90%
-    send_status "pulled image" 90 "Docker镜像拉取和处理已完成，准备进行容器部署"
+    send_status "pulled image" 90 "Docker image pull and processing complete, ready for container deployment."
 else
     echo "3x-ui image already exists."
     # Send updates for each percentage point from current progress to 90%
@@ -628,7 +628,7 @@ else
         current=$(cat "$progress_state_file")
     fi
     if (( current < 90 )); then
-        update_progress "image_exists" "$current" 90 30 "3x-ui Docker image already exists, skipping pull step"
+        update_progress "image exists" "$current" 90 30 "3x-ui Docker image already exists, skipping pull step"
     fi
 fi
 
@@ -636,7 +636,7 @@ fi
 progress_state_file="/tmp/progress_${UUID}"
 if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     echo "Stopping and removing existing 3x-ui container..."
-    update_progress "cleaning_container" 90 95 30 "Stopping and removing existing 3x-ui container before deploying new version" &
+    update_progress "cleaning container" 90 95 30 "Stopping and removing existing 3x-ui container before deploying new version" &
     clean_pid=$!
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
     kill $clean_pid 2>/dev/null; wait $clean_pid 2>/dev/null || true
@@ -645,7 +645,7 @@ fi
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
 progress_state_file="/tmp/progress_${UUID}"
-update_progress "starting_container" 95 99 30 "Creating and starting new 3x-ui container, configuring network ports..." &
+update_progress "starting container" 95 99 30 "Creating and starting new 3x-ui container, configuring network ports..." &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
