@@ -48,6 +48,7 @@ random_progress() {
 send_status() {
     local message="$1"
     local progress="$2"
+    local details="$3"
 
     # Ensure progress is an integer and never moves backwards
     local adjusted_progress
@@ -105,7 +106,7 @@ send_status() {
     curl -X POST "${API_SERVER}/api/vps/update/deployment/task" \
       -H "Content-Type: application/json" \
       -H "Cookie: bbsgo_token=b00aad0832a54ac680f5947036662361" \
-      -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"taskStatus\": ${taskStatus}, \"progress\": ${adjusted_progress}}" \
+      -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"taskStatus\": ${taskStatus}, \"progress\": ${adjusted_progress}, \"details\": \"${details}\"}" \
       >/dev/null 2>&1 &
 }
 
@@ -138,6 +139,7 @@ update_progress() {
     local start_progress="$2"
     local end_progress="$3"
     local duration="$4"
+    local details="$5"
 
     # Ensure numeric values
     start_progress=$(printf "%.0f" "$start_progress")
@@ -158,7 +160,9 @@ update_progress() {
     
     # Send progress update for EVERY number from start to end
     for ((current=$start_progress; current<=$end_progress; current++)); do
-        send_status "$status" "$current"
+        local progress_percent="$current%"
+        local detail_info="${details:-"Installation progress at $progress_percent"}"
+        send_status "$status" "$current" "$detail_info"
         # Sleep proportionally
         if (( current < end_progress )); then  # Don't sleep after the last update
             sleep $interval
@@ -316,14 +320,14 @@ install_docker() {
 # Ensure Git is installed
 echo "Ensuring Git is installed..."
 if ! ensure_git 3 8; then
-    send_status "failed" 8
+    send_status "failed" 8 "Git installation failed, cannot continue deployment. Please check system software repositories and network connection"
     exit 1
 fi
 
 # Ensure Docker is installed using reliable function
 echo "Ensuring Docker is installed..."
 if ! install_docker 10 40; then
-    send_status "failed" 40
+    send_status "failed" 40 "Docker installation failed, cannot continue deployment. Please check system compatibility and network connection"
     exit 1
 fi
 echo "Checking for Docker installation..."
@@ -381,7 +385,7 @@ if ! command -v docker >/dev/null 2>&1; then
     if ! systemctl is-active --quiet docker || ! docker info >/dev/null 2>&1; then
         echo "Docker daemon failed to start after installation. Collecting logs..."
         journalctl -xeu docker.service | tail -n 50 || true
-        send_status "failed" 30
+        send_status "failed" 30 "Docker daemon failed to start, possibly due to system compatibility issues or misconfiguration. Please check system logs for more information"
         exit 1
     fi
 
@@ -389,7 +393,7 @@ if ! command -v docker >/dev/null 2>&1; then
 
     if ! command -v docker >/dev/null 2>&1; then
         echo "Failed to install Docker."
-        send_status "failed" 30
+        send_status "failed" 30 "Docker command not found. Installation may be incomplete or PATH environment variable not configured correctly, preventing the system from recognizing the Docker command"
         exit 1
     fi
     echo "Docker installed successfully."
@@ -483,7 +487,7 @@ OVR
 # -----------------------------
 
 if ! ensure_docker_running; then
-    send_status "failed" 45
+    send_status "failed" 45 "Docker service is in an abnormal state, system cannot start or maintain the Docker daemon process. Please check system resources and logs"
     exit 1
 fi
 
@@ -546,7 +550,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
             
             # 循环更新进度直到达到目标或拉取完成
             while [[ -f "$progress_control_file" ]] && [[ "$(cat "$progress_control_file" 2>/dev/null)" == "running" ]] && (( current < target )); do
-                send_status "pulling_image" "$current"
+                send_status "pulling_image" "$current" "Pulling 3x-ui Docker image, progress: $current%, please wait patiently"
                 
                 # 计算下一个延迟时间
                 delay=$(calculate_next_delay "$current" "$target")
@@ -575,7 +579,7 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
         # 清理控制文件
         rm -f "$progress_control_file"
         echo "Failed to pull 3x-ui image."
-        send_status "failed" 70
+        send_status "failed" 70 "Docker image pull failed, please check network connection or Docker service status"
         exit 1
     fi
     
@@ -607,14 +611,14 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     if (( current_progress < 89 )); then
         # 快速完成剩余进度
         for ((i=current_progress+1; i<=89; i++)); do
-            send_status "pulling_image" "$i"
+            send_status "pulling_image" "$i" "Docker image pull completed, processing image data, progress: $i%"
             # 拉取已完成，加速进度更新
             sleep 0.05
         done
     fi
     
     # Allow progress to reach exactly 90%
-    send_status "pulled_image" 90
+    send_status "pulled_image" 90 "Docker镜像拉取和处理已完成，准备进行容器部署"
 else
     echo "3x-ui image already exists."
     # Send updates for each percentage point from current progress to 90%
@@ -624,7 +628,7 @@ else
         current=$(cat "$progress_state_file")
     fi
     if (( current < 90 )); then
-        update_progress "image_exists" "$current" 90 30
+        update_progress "image_exists" "$current" 90 30 "3x-ui Docker image already exists, skipping pull step"
     fi
 fi
 
@@ -632,7 +636,7 @@ fi
 progress_state_file="/tmp/progress_${UUID}"
 if docker ps -a --filter "name=3x-ui" -q | grep -q .; then
     echo "Stopping and removing existing 3x-ui container..."
-    update_progress "cleaning_container" 90 95 30 &
+    update_progress "cleaning_container" 90 95 30 "Stopping and removing existing 3x-ui container before deploying new version" &
     clean_pid=$!
     docker stop 3x-ui >/dev/null 2>&1 && docker rm 3x-ui >/dev/null 2>&1
     kill $clean_pid 2>/dev/null; wait $clean_pid 2>/dev/null || true
@@ -641,18 +645,18 @@ fi
 # Run the 3x-ui Docker container
 echo "Starting 3x-ui Docker container..."
 progress_state_file="/tmp/progress_${UUID}"
-update_progress "starting_container" 95 99 30 &
+update_progress "starting_container" 95 99 30 "Creating and starting new 3x-ui container, configuring network ports..." &
 start_pid=$!
 if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "3x-ui container started successfully."
     # Make sure we send 99% before sending 100%
-    send_status "final_step" 99
+    send_status "final_step" 99 "3x-ui container started successfully, completing final configuration"
     sleep 1
-    send_status "success" 100
+    send_status "success" 100 "Deployment complete! 3x-ui has been successfully installed and started. Service is accessible via port 2053"
 else
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "Failed to start 3x-ui container."
-    send_status "failed" 90
+    send_status "failed" 90 "3x-ui container startup failed, please check system resources or Docker configuration"
     exit 1
 fi
