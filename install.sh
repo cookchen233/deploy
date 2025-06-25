@@ -509,8 +509,18 @@ fi
 progress_transition "checking_image" 50 12
 if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "Pulling 3x-ui Docker image..."
-    # Simulate pulling progress between 55% and 70%
-    update_progress "pulling_image" 55 70 180 &
+    # Smooth progress: start from current recorded value (or 55 if already higher)
+    current_pull=0
+    progress_state_file="/tmp/progress_${UUID}"
+    if [[ -f "$progress_state_file" ]]; then
+        current_pull=$(cat "$progress_state_file")
+    fi
+    if (( current_pull < 55 )); then
+        start_pull=$current_pull
+    else
+        start_pull=55
+    fi
+    update_progress "pulling_image" "$start_pull" 70 180 &
     pull_pid=$!
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
         kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
