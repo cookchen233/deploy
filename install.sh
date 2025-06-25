@@ -111,6 +111,29 @@ send_status() {
 
 
 # Background function to update progress during long operations
+# Smoothly transition to a target progress if it is ahead of the current one
+progress_transition() {
+    local status="$1"
+    local target="$2"
+    local duration="${3:-15}"
+
+    local progress_state_file="/tmp/progress_${UUID}"
+    local current=0
+    if [[ -f "$progress_state_file" ]]; then
+        current=$(cat "$progress_state_file")
+    fi
+    # Clamp current
+    if (( current < 0 )); then current=0; fi
+    if (( current > 100 )); then current=100; fi
+
+    if (( target <= current )); then
+        # No forward movement needed; still send status to update message label
+        send_status "$status" "$target"
+    else
+        update_progress "$status" "$current" "$target" "$duration" &
+    fi
+}
+
 update_progress() {
     local status="$1"
     local start_progress="$2"
@@ -466,7 +489,7 @@ if ! ensure_docker_running; then
     exit 1
 fi
 
-send_status "checking_image" 50
+progress_transition "checking_image" 50 12
 if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     echo "Pulling 3x-ui Docker image..."
     # Simulate pulling progress between 55% and 70%
@@ -480,10 +503,10 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     fi
     # Stop progress simulation and send final status
     kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
-    send_status "pulled_image" 70
+    progress_transition "pulled_image" 70 10
 else
     echo "3x-ui image already exists."
-    send_status "image_exists" 60
+    progress_transition "image_exists" 60 8
 fi
 
 # Stop and remove existing 3x-ui container if running
