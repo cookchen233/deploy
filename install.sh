@@ -501,17 +501,36 @@ if ! docker image inspect swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsan
     else
         start_pull=55
     fi
-    # Use more granular progress updates for Docker image pulling (52-90)
-    update_progress "pulling_image" "$start_pull" 90 180 &
-    pull_pid=$!
+        # For Docker pull, we need to GUARANTEE all progress values are reported
+    # So we'll do the pull first, then simulate the progress AFTER it's done
+    echo "Pulling Docker image (this may take a while)..."
+    
+    # Do the actual pull first without sending progress updates
     if ! docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10; then
-        kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
         echo "Failed to pull 3x-ui image."
         send_status "failed" 70
         exit 1
     fi
-    # Stop progress simulation and send final status
-    kill $pull_pid 2>/dev/null; wait $pull_pid 2>/dev/null || true
+    
+    echo "Docker image pull completed. Sending progress updates..."
+    
+    # Now that pull is complete, send ALL progress updates sequentially
+    # Get the current progress
+    current_progress=0
+    if [[ -f "$progress_state_file" ]]; then
+        current_progress=$(cat "$progress_state_file")
+    fi
+    
+    # If current progress is under 89, step through all values up to 89
+    if (( current_progress < 89 )); then
+        # Send every single progress value between current+1 and 89
+        for ((i=current_progress+1; i<=89; i++)); do
+            send_status "pulling_image" "$i"
+            # Use a shorter sleep to move through quickly but visibly
+            sleep 0.1
+        fi
+    fi
+    
     # Allow progress to reach exactly 90%
     send_status "pulled_image" 90
 else
