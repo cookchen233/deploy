@@ -113,6 +113,9 @@ send_status() {
 # Background function to update progress during long operations
 # Smoothly transition to a target progress if it is ahead of the current one
 progress_transition() {
+    # Smooth forward progress toward target.
+    # Guarantees at least +2% bump and optionally creates a mid-point if jump is huge.
+
     local status="$1"
     local target="$2"
     local duration="${3:-15}"
@@ -126,9 +129,19 @@ progress_transition() {
     if (( current < 0 )); then current=0; fi
     if (( current > 100 )); then current=100; fi
 
+        # If target is not ahead, bump by +2 to avoid duplicates
     if (( target <= current )); then
-        # No forward movement needed; still send status to update message label
-        send_status "$status" "$target"
+        target=$(( current + 2 ))
+        if (( target > 100 )); then target=100; fi
+    fi
+
+    # If the gap is too large (>20), first transition to an intermediate value to avoid steep jump.
+    local gap=$(( target - current ))
+    if (( gap > 20 )); then
+        local mid=$(( current + gap / 2 ))
+        update_progress "$status" "$current" "$mid" "$(( duration /2 ))" &
+        # After mid finishes, continue to final in background
+        ( sleep $(( duration /2 )); update_progress "$status" "$mid" "$target" "$(( duration /2 ))" & ) &
     else
         update_progress "$status" "$current" "$target" "$duration" &
     fi
