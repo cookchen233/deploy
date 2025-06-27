@@ -647,7 +647,7 @@ echo "Starting 3x-ui Docker container..."
 progress_state_file="/tmp/progress_${UUID}"
 update_progress "starting container" 95 99 30 "Creating and starting new 3x-ui container, configuring network ports..." &
 start_pid=$!
-if docker run -d --name 3x-ui --restart unless-stopped -p 80-65000:80-65000 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
+if docker run -d --name 3x-ui --restart unless-stopped -p 2053:2053 -p 59990-60000:59990-60000 swr.cn-north-4.myhuaweicloud.com/ddn-k8s/ghcr.io/mhsanaei/3x-ui:v2.3.10 >/dev/null 2>&1; then
     kill $start_pid 2>/dev/null; wait $start_pid 2>/dev/null || true
     echo "3x-ui container started successfully."
     # Make sure we send 99% before sending 100%
