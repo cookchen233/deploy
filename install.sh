@@ -103,7 +103,7 @@ send_status() {
         taskStatus=4
     fi
 
-    curl -X POST "${API_SERVER}/api/vps/update/deployment/task" \
+    curl -X POST "${API_SERVER}/api/deployment-task/update" \
       -H "Content-Type: application/json" \
       -H "Cookie: bbsgo_token=b00aad0832a54ac680f5947036662361" \
       -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"taskStatus\": ${taskStatus}, \"progress\": ${adjusted_progress}, \"details\": \"${details}\"}" \
