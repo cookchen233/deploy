@@ -96,17 +96,17 @@ send_status() {
     # Reload the possibly updated value so that curl sends the locked value
     adjusted_progress=$(cat "$progress_state_file")
 
-    local taskStatus=1
+    local task_status=1
     if [[ "$message" == "success" ]]; then
-        taskStatus=2
+        task_status=2
     elif [[ "$message" == "failed" ]]; then
-        taskStatus=4
+        task_status=4
     fi
 
     curl -X POST "${API_SERVER}/api/deployment-task/update" \
       -H "Content-Type: application/json" \
       -H "Cookie: bbsgo_token=b00aad0832a54ac680f5947036662361" \
-      -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"taskStatus\": ${taskStatus}, \"progress\": ${adjusted_progress}, \"details\": \"${details}\"}" \
+      -d "{\"uuid\": \"${UUID}\", \"message\": \"${message}\", \"task_status\": ${task_status}, \"progress\": ${adjusted_progress}, \"details\": \"${details}\"}" \
       >/dev/null 2>&1 &
 }
 
